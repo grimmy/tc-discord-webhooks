@@ -38,6 +38,7 @@ import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.comments.Comment;
 import jetbrains.buildServer.serverSide.mute.MuteInfo;
 import jetbrains.buildServer.serverSide.problems.BuildProblemInfo;
+import jetbrains.buildServer.serverSide.WebLinks;
 import jetbrains.buildServer.tests.TestName;
 import jetbrains.buildServer.users.NotificatorPropertyKey;
 import jetbrains.buildServer.users.PropertyKey;
@@ -104,10 +105,16 @@ public class DiscordNotificator implements Notificator {
      */
     private SBuildServer sBuildServer;
 
-    public DiscordNotificator(NotificatorRegistry notificatorRegistry, SBuildServer sBuildServer) {
+    /**
+     * The {@link WebLinks} this {@link Notificator} should use.
+     */
+    private WebLinks webLinks;
+
+    public DiscordNotificator(NotificatorRegistry notificatorRegistry, SBuildServer sBuildServer, WebLinks webLinks) {
         this.discordWebHookProcessor = new DiscordWebHookProcessor();
         this.sBuildServer = sBuildServer;
         this.initializeNotificator(notificatorRegistry);
+        this.webLinks = webLinks;
     }
 
     /**
@@ -166,6 +173,16 @@ public class DiscordNotificator implements Notificator {
     }
 
     /**
+     * Builds the build id for {@link SRunningBuild}.
+     *
+     * @param sRunningBuild The build from which the id will be build
+     * @return The id created from {@link SRunningBuild}
+     */
+    private String buildID(SRunningBuild sRunningBuild) {
+        return sRunningBuild.getFullName() + "-" + sRunningBuild.getBuildNumber();
+    }
+
+    /**
      * Builds the {@link DiscordEmbedField}'s that are used in all notifications
      * that are based on an {@link SRunningBuild}.
      *
@@ -179,11 +196,11 @@ public class DiscordNotificator implements Notificator {
         SProject project = getProjectFromRunningBuild(sRunningBuild);
         String projectName = NO_DATA;
         if (project != null) {
-            projectName = project.getName();
+            projectName = project.getFullName();
         }
         discordEmbedFields.add(new DiscordEmbedField("Project: ", projectName, true));
         // Build name
-        discordEmbedFields.add(new DiscordEmbedField("Build:", sRunningBuild.getBuildTypeName(), true));
+        discordEmbedFields.add(new DiscordEmbedField("Build:", sRunningBuild.getBuildTypeName() + "-" + sRunningBuild.getBuildNumber(), true));
         // Branch
         Branch branch = sRunningBuild.getBranch();
         String branchName = "Default";
@@ -200,14 +217,12 @@ public class DiscordNotificator implements Notificator {
 
     @Override
     public void notifyBuildStarted(@NotNull SRunningBuild sRunningBuild, @NotNull Set<SUser> users) {
-        String title = "Build started";
-        String description = "A build with the ID " + sRunningBuild.getBuildId() + " has been started!";
         DiscordWebHookPayload discordWebHookPayload = new DiscordWebHookPayload();
         discordWebHookPayload.setEmbeds(new DiscordEmbed[]{
                 new DiscordEmbed(
-                        title,
-                        description,
+                        "Build started",
                         "",
+                        webLinks.getViewResultsUrl(sRunningBuild),
                         DiscordEmbedColor.BLUE,
                         null,
                         null,
@@ -220,14 +235,12 @@ public class DiscordNotificator implements Notificator {
 
     @Override
     public void notifyBuildSuccessful(@NotNull SRunningBuild sRunningBuild, @NotNull Set<SUser> users) {
-        String title = "Build succeeded!";
-        String description = "The build with the ID " + sRunningBuild.getBuildId() + " has succeeded!";
         DiscordWebHookPayload discordWebHookPayload = new DiscordWebHookPayload();
         discordWebHookPayload.setEmbeds(new DiscordEmbed[]{
                 new DiscordEmbed(
-                        title,
-                        description,
+                        "Build Succeeded",
                         "",
+                        webLinks.getViewResultsUrl(sRunningBuild),
                         DiscordEmbedColor.GREEN,
                         null,
                         null,
@@ -240,14 +253,12 @@ public class DiscordNotificator implements Notificator {
 
     @Override
     public void notifyBuildFailed(@NotNull SRunningBuild sRunningBuild, @NotNull Set<SUser> users) {
-        String title = "Build failed";
-        String description = "The build with the ID " + sRunningBuild.getBuildId() + " has failed!";
         DiscordWebHookPayload discordWebHookPayload = new DiscordWebHookPayload();
         discordWebHookPayload.setEmbeds(new DiscordEmbed[]{
                 new DiscordEmbed(
-                        title,
-                        description,
+                        "Build Failed",
                         "",
+                        webLinks.getViewResultsUrl(sRunningBuild),
                         DiscordEmbedColor.RED,
                         null,
                         null,
@@ -260,14 +271,12 @@ public class DiscordNotificator implements Notificator {
 
     @Override
     public void notifyBuildFailedToStart(@NotNull SRunningBuild sRunningBuild, @NotNull Set<SUser> users) {
-        String title = "Build failed to start";
-        String description = "The build with the ID " + sRunningBuild.getBuildId() + " has failed to start!";
         DiscordWebHookPayload discordWebHookPayload = new DiscordWebHookPayload();
         discordWebHookPayload.setEmbeds(new DiscordEmbed[]{
                 new DiscordEmbed(
-                        title,
-                        description,
+                        "Build failed to start",
                         "",
+                        webLinks.getViewResultsUrl(sRunningBuild),
                         DiscordEmbedColor.RED,
                         null,
                         null,
@@ -301,7 +310,7 @@ public class DiscordNotificator implements Notificator {
     @Override
     public void notifyBuildFailing(@NotNull SRunningBuild sRunningBuild, @NotNull Set<SUser> users) {
         String title = "Build is failing";
-        String description = "The build with the ID " + sRunningBuild.getBuildId() + " is failing!";
+        String description = buildID(sRunningBuild) + " is failing!";
         DiscordWebHookPayload discordWebHookPayload = new DiscordWebHookPayload();
         discordWebHookPayload.setEmbeds(new DiscordEmbed[]{
                 new DiscordEmbed(
@@ -321,7 +330,7 @@ public class DiscordNotificator implements Notificator {
     @Override
     public void notifyBuildProbablyHanging(@NotNull SRunningBuild sRunningBuild, @NotNull Set<SUser> users) {
         String title = "Build is probably hanging";
-        String description = "The build with the ID " + sRunningBuild.getBuildId() + " is probably hanging!";
+        String description = buildID(sRunningBuild) + " is probably hanging!";
         DiscordWebHookPayload discordWebHookPayload = new DiscordWebHookPayload();
         discordWebHookPayload.setEmbeds(new DiscordEmbed[]{
                 new DiscordEmbed(
